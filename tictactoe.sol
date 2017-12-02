@@ -1,69 +1,106 @@
-// mur: specify pragma (solidity version)
+pragma solidity ^0.4.0;
 
 contract TicTacToe {
 
-    enum BoardState {
-        x,
-        o,
-        empty
+    enum GameStatus {
+        needPlayersAndMinAnte,
+        needAnteXO,
+        needAnteX,
+        needAnteO,
+        xTurn,
+        yTurn,
+        xWon,
+        oWon,
+        draw
     }
 
-    // mur: see how one can use enums:
-    // http://solidity.readthedocs.io/en/develop/common-patterns.html#state-machine
-    enum GameStatus {
-        xWon, oWon, tie, next, invalid
+    event EmitStatus(
+        int gameStatus
+    );
+
+    enum ErrorCode {
+        minAnteMustBeGreaterThan0,
+        invalidSender
     }
+
+    event EmitError(
+        int ErrorCode
+    );
 
     enum BoardPosition {
-        0,1,2,3,4,5,6,7,8
+        empty,
+        x,
+        o
     }
 
-    // mur: create error event for error logs
+    function createBoard() private {
+        BoardPosition[] memory board = new BoardPosition[](9);
+    }
 
-    BoardState[] board;
     address x;
     address o;
-
-    function TicTacToe() public {
-        // no need for intializer
-    }
 
     uint256 minAnte;
     uint256 anteX;
     uint256 anteO;
 
-    address currrentPlayer;
+    address currentPlayer;
+
+    GameStatus public gameStatus = GameStatus.needPlayersAndMinAnte;
+
+    function createGame(address _x, address _o, uint256 _minAnte) public {
+        if (_minAnte <= 0) {
+            EmitError(ErrorCode.minAnteMustBeGreaterThan0);
+            return;
+        }
+
+        x = _x;
+        o = _o;
+        minAnte = _minAnte;
+        EmitStatus(gameStatus = GameStatus.needAnteXO);
+    }
 
     function anteUp() payable public {
+        if (msg.sender != x && msg.sender != o) {
+            EmitError(ErrorCode.InvalidSender);
+            revert();
+        }
         if (msg.sender == x) {
             anteX += msg.value;
         }
         if (msg.sender == o) {
             anteO += msg.value;
         }
+        if (anteX > 0) {
+            if (anteO > 0) {
+                EmitStatus(gameStatus = GameStatus.antedUp);
+                return;
+            } else {
+                EmitStatus(gameStatus = GameStatus.needAnteO);
+                return;
+            }
+        } else {
+            if (anteO > 0) {
+                EmitStatus(gameStatus = GameStatus.needAnteX);
+                return
+            }
+        }
 
-        // mur: handle case when someone else sends ether and it stucks here forever
-    }
-
-    function isGamePlayable() internal returns bool {
-        require( anteX >= minAnte && anteO >= minAnte );  // mur: return bool instead of require
-    }
-
-    function createGame(address _x, address _o, uint256 _minAnte) public {
-        x = _x;
-        o = _o;
-        currrentPlayer = _x;
-        minAnte = _minAnte;
+        createBoard()
+        currentPlayer = _x;
+        EmitStatus(gameStatus = GameStatus.xTurn);
     }
 
     function makeMove(BoardPosition position) internal returns (GameStatus _status) {
 
     }
 
-    function playTurn(BoardPosition position) public returns (GameStatus _status) { // mur: returns bool
-        require ( this.isGamePlayable() );  // mur: emit error, return false
+    function playTurn(BoardPosition position) public returns bool {
+        if (anteX >= minAnte && anteO >= minAnte) {
 
-        if (msg.sender == currrentPlayer) {
+        }
+
+        if (msg.sender == currentPlayer) {
             // play the move
             status = this.makeMove(position);
 
@@ -71,7 +108,7 @@ contract TicTacToe {
                 this.transfer(x)
             } else if (status == GameStatus.oWon) {
                 this.transfer(o)
-            } else if (status == GameStatus.tie) {
+            } else if (status == GameStatus.draw) {
                 // do we send status first?
                 revert();  // mur: shouldn't we return money back to players?
             } else if (status == GameStatus.invalid) {
@@ -84,10 +121,10 @@ contract TicTacToe {
 
         // switch player
         if (msg.sender == x) {
-            currrentPlayer = o;
+            currentPlayer = o;
         }
         if (msg.sender == o) {
-            currrentPlayer = x;
+            currentPlayer = x;
         }
         return GameStatus.next // mur: semicolon, return true
     }
