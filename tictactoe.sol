@@ -8,7 +8,7 @@ contract TicTacToe {
         needAnteX,
         needAnteO,
         xTurn,
-        yTurn,
+        oTurn,
         xWon,
         oWon,
         draw
@@ -20,7 +20,10 @@ contract TicTacToe {
 
     enum ErrorCode {
         minAnteMustBeGreaterThan0,
-        invalidSender
+        invalidSender,
+        gameAlreadyInProgress,
+        gameNotInProgress,
+        notYourTurn
     }
 
     event EmitError(
@@ -45,25 +48,47 @@ contract TicTacToe {
     uint256 anteO;
 
     address currentPlayer;
+    bool isGameInProgress;
 
     GameStatus public gameStatus = GameStatus.needPlayersAndMinAnte;
 
-    function createGame(address _x, address _o, uint256 _minAnte) public {
+    // modifier hasValidMinAnte () {
+    //     if (minAnte <= 0) {
+    //         return EmitError(ErrorCode.minAnteMustBeGreaterThan0);
+    //     }
+    //     if (isGameInProgress == true) {
+    //         return EmitError(ErrorCode.gameAlreadyInProgress);
+    //     }
+    // }
+
+    function createGame(address _x, address _o, uint256 _minAnte) public returns (bool) {
+        // TODO: validate address _x & address_o ?
+        if (isGameInProgress == true) {
+            EmitError(int(ErrorCode.gameAlreadyInProgress));
+            return false;
+        }
         if (_minAnte <= 0) {
-            EmitError(ErrorCode.minAnteMustBeGreaterThan0);
-            return;
+            EmitError(int(ErrorCode.minAnteMustBeGreaterThan0));
+            return false;
         }
 
         x = _x;
         o = _o;
         minAnte = _minAnte;
-        EmitStatus(gameStatus = GameStatus.needAnteXO);
+        EmitStatus(int(gameStatus = GameStatus.needAnteXO));
+        return true;
     }
 
-    function anteUp() payable public {
+    function anteUp() payable public returns (bool) {
+        if (isGameInProgress == true) {
+            EmitError(int(ErrorCode.gameAlreadyInProgress));
+            return false;
+        }
+
         if (msg.sender != x && msg.sender != o) {
-            EmitError(ErrorCode.InvalidSender);
+            EmitError(int(ErrorCode.invalidSender));
             revert();
+            return false;
         }
         if (msg.sender == x) {
             anteX += msg.value;
@@ -71,66 +96,66 @@ contract TicTacToe {
         if (msg.sender == o) {
             anteO += msg.value;
         }
-        if (anteX > 0) {
-            if (anteO > 0) {
-                EmitStatus(gameStatus = GameStatus.antedUp);
-                return;
-            } else {
-                EmitStatus(gameStatus = GameStatus.needAnteO);
-                return;
-            }
-        } else {
-            if (anteO > 0) {
-                EmitStatus(gameStatus = GameStatus.needAnteX);
-                return
-            }
+        if (anteX <= minAnte && anteO <= minAnte) {
+            EmitStatus(int(gameStatus = GameStatus.needAnteXO));
+            return true;
+        }
+        if (anteX > minAnte && anteO <= minAnte) {
+            EmitStatus(int(gameStatus = GameStatus.needAnteO));
+            return true;
+        }
+        if (anteX <= minAnte && anteO > minAnte) {
+            EmitStatus(int(gameStatus = GameStatus.needAnteX));
+            return true;
         }
 
-        createBoard()
-        currentPlayer = _x;
-        EmitStatus(gameStatus = GameStatus.xTurn);
+        createBoard();
+        currentPlayer = x;
+        isGameInProgress = true;
+        EmitStatus(int(gameStatus = GameStatus.xTurn));
+        return true;
     }
 
-    function makeMove(BoardPosition position) internal returns (GameStatus _status) {
 
+    function makeMove(int position) private returns (GameStatus _status) {
+        // place position and return result status
     }
 
-    function playTurn(BoardPosition position) public returns bool {
-        if (anteX >= minAnte && anteO >= minAnte) {
-
+    function playTurn(int position) public returns (bool) {
+        if (isGameInProgress == false) {
+            EmitError(int(ErrorCode.gameNotInProgress));
+            return false;
         }
 
-        if (msg.sender == currentPlayer) {
-            // play the move
-            status = this.makeMove(position);
+        if (msg.sender != currentPlayer) {
+            EmitError(int(ErrorCode.notYourTurn));
+            return false;
+        }
 
-            if (status == GameStatus.xWon) {
-                this.transfer(x)
-            } else if (status == GameStatus.oWon) {
-                this.transfer(o)
-            } else if (status == GameStatus.draw) {
-                // do we send status first?
-                revert();  // mur: shouldn't we return money back to players?
-            } else if (status == GameStatus.invalid) {
-                return GameStatus.invalid
-            }
+        // play the move
+        gameStatus = makeMove(position);
+        EmitStatus(int(gameStatus));
 
-        } else {
-            return GameStatus.invalid  // mur: emit error, return false
+        if (gameStatus == GameStatus.xWon) {
+            this.transfer(x);
+            return true;
+        } else if (gameStatus == GameStatus.oWon) {
+            this.transfer(o);
+            return true;
+        } else if (gameStatus == GameStatus.draw) {
+            // TODO: refund money to players
+            revert();
+            return false;
         }
 
         // switch player
-        if (msg.sender == x) {
-            currentPlayer = o;
-        }
-        if (msg.sender == o) {
+        if (gameStatus == GameStatus.xTurn) {
             currentPlayer = x;
         }
-        return GameStatus.next // mur: semicolon, return true
-    }
-
-    function isGameOver() internal constant returns (GameStatus _status) {
-        // determine if game is over
+        if (gameStatus == GameStatus.oTurn) {
+            currentPlayer = o;
+        }
+        return true;
     }
 
     // mur: calling other contracts can be tricky, and transfer is actually
@@ -147,5 +172,4 @@ contract TicTacToe {
     function transfer(address _winner) {
         _winner.transfer(anteO + anteX);
     }
-
 }
